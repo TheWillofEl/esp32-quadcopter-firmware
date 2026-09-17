@@ -33,13 +33,38 @@ flight results) lands once more phases are complete.
 
 ```
 firmware/
-  common/pins.h       - single source of truth for every GPIO assignment
-  hello_board/         - Phase 1: LED blink + UART bring-up sketch
-  drone_firmware/       - main flight firmware (WIP)
+  common/pins.h                    - single source of truth for every GPIO assignment
+  hello_board/                     - Phase 1: LED blink + UART bring-up sketch
+  drone_firmware/                  - main flight firmware (WIP)
+    drone_firmware.ino             - setup()/loop(), wires the modules below together
+    mpu6050.h                      - IMU driver: init, WHO_AM_I check, interrupt-driven reads
+    battery.h                      - battery ADC with oversampling + calibration
+    complementary_filter.h         - roll/pitch estimate from accel + gyro
+    telemetry.h                    - Wi-Fi access point + UDP telemetry broadcast
+tools/
+  ground_station.py                - live plotter for roll/pitch/battery telemetry
+  requirements.txt                 - Python deps for tools/ scripts
 docs/
-  PINMAP.md            - full pin map, verified against the Altium schematic
-  TOOLCHAIN.md         - exact toolchain versions for reproducible builds
+  PINMAP.md                        - full pin map, verified against the Altium schematic
+  TOOLCHAIN.md                     - exact toolchain versions for reproducible builds
 ```
+
+## Telemetry / ground station
+
+The drone runs its **own Wi-Fi access point** (not your home router) —
+same approach LiteWing uses. Default SSID/password are in
+`firmware/drone_firmware/telemetry.h` (`drone-firmware` / `flyme1234` —
+change these before flying anywhere with other people's drones nearby).
+
+1. Flash and power on the drone.
+2. Connect your computer's Wi-Fi to the drone's SSID.
+3. `pip install -r tools/requirements.txt`
+4. `python tools/ground_station.py` — plots roll, pitch, and battery
+   voltage live, ~20 times a second.
+
+This is Ahmed's own small UDP protocol (plain-text `key=value` pairs),
+not cflib/CRTP — see [Credits](#credits) for why that distinction is
+kept deliberately.
 
 ## Progress
 
@@ -47,7 +72,7 @@ docs/
 |---|---|---|
 | 0 | Pin map verified against schematic | Done |
 | 1 | Toolchain + LED/UART bring-up sketch | Code written, **not yet flash-tested** (no USB access at time of writing) |
-| 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Not started |
+| 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Code written and compiles clean, **not yet flash-tested** |
 | 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Not started |
 | 4 | PID control loop, motor mixing | Not started |
 | 5 | Control link (UDP) | Not started |
