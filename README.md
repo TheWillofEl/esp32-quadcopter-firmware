@@ -44,6 +44,9 @@ firmware/
     complementary_filter.h         - roll/pitch estimate from accel + gyro
     telemetry.h                    - Wi-Fi access point + UDP telemetry broadcast
     motors.h                       - PWM motor control, arming, failsafe, battery cutoff
+    pid.h                          - generic PID controller, used for both angle and rate loops
+    mixer.h                        - X-quad motor mixing (throttle + roll/pitch/yaw -> 4 motor values)
+    flight_controller.h            - cascaded angle->rate self-level loop, wires PID + mixer + motors
     serial_console.h               - USB-serial bench-test command interface (Phase 3-5 stand-in)
 tools/
   ground_station.py                - live plotter for roll/pitch/battery telemetry
@@ -52,6 +55,7 @@ docs/
   PINMAP.md                        - full pin map, verified against the Altium schematic
   TOOLCHAIN.md                     - exact toolchain versions for reproducible builds
   MOTOR_BENCH_TEST.md              - required procedure before ever spinning a motor
+  SELF_LEVEL_BENCH_TEST.md         - required procedure before trusting the self-level loop
 ```
 
 ## Telemetry / ground station
@@ -79,7 +83,7 @@ kept deliberately.
 | 1 | Toolchain + LED/UART bring-up sketch | Code written, **not yet flash-tested** (no USB access at time of writing) |
 | 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Code written and compiles clean, **not yet flash-tested** |
 | 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
-| 4 | PID control loop, motor mixing | Not started |
+| 4 | Self-level control loop (cascaded angle->rate PID, X-quad motor mixing) | Code written and compiles clean, **not yet flash-tested** — gains are unverified starting points, not tuned; bench-test procedure: [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md) |
 | 5 | Control link (UDP) | Not started |
 | 6 | Full README, license, polish | Not started |
 
@@ -103,6 +107,13 @@ rules followed throughout development:
     commanded.
 - Motor bench-test procedure (props off, board clamped, one motor at a
   time): [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md)
+- Self-level control loop (`flight_controller.h`) only activates via an
+  explicit `level` serial command, and only affects roll/pitch — no
+  yaw/altitude/position control exists yet. PID gains are conservative,
+  untuned starting points; they are tuned only after real hardware
+  testing, never guessed into a "better-looking" number. Bench-test
+  procedure (props off first, sign/magnitude checks by hand, only then
+  props on and restrained): [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md)
 
 ## Credits
 

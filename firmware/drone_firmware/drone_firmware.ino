@@ -4,18 +4,24 @@
 // with a complementary filter, reads battery voltage, streams both over
 // the drone's own Wi-Fi access point via UDP.
 //
-// Phase 3 (current): motor PWM + safety, bench-testable over USB serial
-// (see serial_console.h) since the real Wi-Fi control link doesn't exist
-// yet (that's Phase 5). Every loop iteration checks the comms failsafe
-// and the battery cutoff, both of which force an immediate disarm — the
+// Phase 3: motor PWM + safety, bench-testable over USB serial (see
+// serial_console.h) since the real Wi-Fi control link doesn't exist yet
+// (that's Phase 5). Every loop iteration checks the comms failsafe and
+// the battery cutoff, both of which force an immediate disarm — the
 // arming sequence and both safety checks exist BEFORE any throttle
 // command can ever reach a motor.
 //
+// Phase 4 (current): self-level control loop (flight_controller.h) —
+// cascaded angle->rate PID per roll/pitch axis, mixed to four motor
+// throttles (mixer.h) for this board's confirmed X-quad layout. Bench
+// test via the serial console's 'level <0-100>' command; see
+// flight_controller.h's TODO for the exact hardware test sequence. Not
+// flown — gains are conservative starting points, unverified on real
+// hardware, and yaw/altitude/position are explicitly out of scope (see
+// flight_controller.h header comment for why).
+//
 // PROPS OFF. BOARD CLAMPED DOWN. Every time, no exceptions, per the
 // project's safety rules (README.md / HANDOFF docs).
-//
-// Phase 4+ (PID control loop, motor mixing, real flight) is NOT in this
-// file yet.
 
 #include "../common/pins.h"
 #include "mpu6050.h"
@@ -23,6 +29,7 @@
 #include "complementary_filter.h"
 #include "telemetry.h"
 #include "motors.h"
+#include "flight_controller.h"
 #include "serial_console.h"
 
 MPU6050 imu;
@@ -30,9 +37,11 @@ BatteryMonitor battery;
 ComplementaryFilter filter;
 Telemetry telemetry;
 Motors motors;
+FlightController flight;
 SerialConsole console;
 
 uint32_t last_update_micros = 0;
+float last_dt_ = 0.0f;
 
 // Loop-rate measurement: the original handoff plan explicitly calls for
 // MEASURING the actual loop period rather than assuming a fixed rate
@@ -56,7 +65,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("=== drone-firmware: Phase 3 (sensors + telemetry + motor PWM/safety) ===");
+  Serial.println("=== drone-firmware: Phase 4 (self-level control loop) ===");
 
   if (!imu.begin()) {
     // WHO_AM_I mismatch means either a wiring fault or the chip isn't
@@ -93,18 +102,31 @@ void setup() {
 }
 
 void loop() {
-  if (imu.readIfReady()) {
+  bool imu_updated = imu.readIfReady();
+  if (imu_updated) {
     uint32_t now_micros = micros();
     float dt = (now_micros - last_update_micros) / 1000000.0f;
     last_update_micros = now_micros;
+    last_dt_ = dt;
 
     filter.update(imu.gyro_x_dps, imu.gyro_y_dps,
                    imu.accel_x_g, imu.accel_y_g, imu.accel_z_g, dt);
   }
 
-  // Bench-test command input (Phase 3 stand-in for the Phase 5 Wi-Fi
+  // Bench-test command input (Phase 3/4 stand-in for the Phase 5 Wi-Fi
   // control link).
-  console.poll(motors, battery, filter);
+  console.poll(motors, battery, filter, flight);
+
+  // Self-level control loop: only actually drives motors when the serial
+  // console's 'level' command turned it on (see flight_controller.h), AND
+  // only when there's a fresh IMU reading this iteration — running the
+  // PID/mixer math again on a stale gyro reading (same value as last
+  // loop) would compute a zero rate-of-change on the derivative term for
+  // no real reason and waste cycles; skipping is free since motors were
+  // already set to their last valid throttle by the previous call.
+  if (imu_updated) {
+    flight.update(filter, imu.gyro_x_dps, imu.gyro_y_dps, last_dt_, motors);
+  }
 
   // Safety checks run every loop iteration, unconditionally — not on
   // the telemetry cadence — so a dead comms link or a dying battery is
@@ -120,9 +142,11 @@ void loop() {
   // that's what's actually taming the noisy 100k/100k divider.
   float battery_volts = battery.readBatteryVolts();
   if (motors.checkFailsafe()) {
+    flight.setSelfLevel(false);
     Serial.println("FAILSAFE: no command received in time. Motors disarmed.");
   }
   if (motors.checkBatteryCutoff(battery_volts)) {
+    flight.setSelfLevel(false);
     Serial.println("BATTERY CUTOFF: voltage below safe minimum. Motors disarmed.");
   }
 
