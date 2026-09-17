@@ -4,9 +4,18 @@ Firmware for a custom ESP32-S3-WROOM-1 quadcopter board I designed and
 built in Altium — the PCB itself is the airframe (four arms with motor
 pads, flight controller in the centre).
 
-**Status: in progress.** This README tracks what's actually done vs. not;
-see [Progress](#progress) below. Full write-up (block diagram, photos,
-flight results) lands once more phases are complete.
+**Status: firmware feature-complete for this scope (Phases 0-6), zero
+hours of real hardware testing.** Every phase below is written honestly:
+"compiles clean" is not the same claim as "works," and this README does
+not blur that line. I have not had physical USB access to the assembled
+board while writing any of this firmware — see
+[Known limitations / what's next](#known-limitations--whats-next) for
+exactly what that means and what the first real hardware session needs
+to do, in order, before this ever leaves the ground.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a block diagram and
+full data-flow walkthrough, and [Progress](#progress) below for
+per-phase status.
 
 ## Hardware
 
@@ -37,7 +46,7 @@ flight results) lands once more phases are complete.
 firmware/
   common/pins.h                    - single source of truth for every GPIO assignment
   hello_board/                     - Phase 1: LED blink + UART bring-up sketch
-  drone_firmware/                  - main flight firmware (WIP)
+  drone_firmware/                  - main flight firmware (feature-complete for this scope, unflown)
     drone_firmware.ino             - setup()/loop(), wires the modules below together
     mpu6050.h                      - IMU driver: init, WHO_AM_I check, interrupt-driven reads
     battery.h                      - battery ADC with oversampling + calibration
@@ -54,6 +63,7 @@ tools/
   pilot_control.py                 - keyboard-driven control-link sender for bench testing
   requirements.txt                 - Python deps for tools/ scripts
 docs/
+  ARCHITECTURE.md                  - block diagram, data flow, why the design is structured this way
   PINMAP.md                        - full pin map, verified against the Altium schematic
   TOOLCHAIN.md                     - exact toolchain versions for reproducible builds
   MOTOR_BENCH_TEST.md              - required procedure before ever spinning a motor
@@ -94,7 +104,12 @@ is kept deliberately.
 | 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
 | 4 | Self-level control loop (cascaded angle->rate PID, X-quad motor mixing) | Code written and compiles clean, **not yet flash-tested** — gains are unverified starting points, not tuned; bench-test procedure: [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md) |
 | 5 | Wi-Fi control link (UDP arm/throttle/roll/pitch commands) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md) |
-| 6 | Full README, license, polish | In progress |
+| 6 | Full README, architecture doc, license, polish | Done |
+
+"Done" for phases 1-5 means: code written, compiles clean under the exact
+toolchain in [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md), and (starting Phase
+3) a written bench-test procedure exists for it. It does **not** mean
+flashed, flown, or verified on real hardware in any way — see below.
 
 ## Safety
 
@@ -133,6 +148,49 @@ rules followed throughout development:
   console; a pilot app that stops sending (crash, Wi-Fi drop, out of
   range) auto-disarms within 500ms, same mechanism as the serial test.
   Bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md)
+
+## Known limitations / what's next
+
+Honest, in priority order — this is the actual state of the project, not
+an aspirational roadmap:
+
+1. **Zero hours of hardware testing.** Every phase above was written
+   without physical USB access to the assembled board. The very first
+   thing that has to happen before anything else on this list is
+   plugging in over USB and working through
+   [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md),
+   [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md), and
+   [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md), in
+   that order, exactly as written — each of those documents assumes the
+   previous one already passed.
+2. **PID gains are unverified starting points**, chosen to be
+   conservative (weak/soft response) specifically so a bug shows up as
+   "sluggish" rather than "violent." Real tuning only happens after Step
+   1, on the physical airframe — see `flight_controller.h`'s TODO for the
+   exact tuning order (kp first, then kd, ki only if needed).
+3. **Sensor mounting orientation is assumed, not measured.** The
+   complementary filter's roll/pitch sign convention
+   (`complementary_filter.h`) is written for the MPU-6050's datasheet
+   axis convention as installed on this board's schematic footprint —
+   but the very first self-level bench test
+   (`docs/SELF_LEVEL_BENCH_TEST.md` Step 1) exists specifically to catch
+   a sign error here before it matters.
+4. **Once hardware testing starts finding real numbers** (actual battery
+   divider ratio via `BatteryMonitor::calibrate()`, actual measured loop
+   rate, actual PID gains, whether the battery-ADC-every-loop cost
+   flagged in `drone_firmware.ino` is significant), this README and the
+   phase docs should be updated with those numbers instead of leaving
+   them as "TBD"/placeholder values — that update is part of finishing
+   the project, not a separate task.
+5. **No photos or video yet** — this repo has no physical build photos or
+   flight footage because flight (or even bench spin-up) hasn't happened
+   yet. This section, and the Progress table above, are the closest thing
+   to a "photo" of the project's actual state right now.
+6. **Deliberately out of scope for this project's current form**: yaw
+   hold, altitude hold, position hold — see
+   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#whats-explicitly-out-of-scope-and-why)
+   for why, and where a future sensor addition would plug in if that ever
+   changes.
 
 ## Credits
 
