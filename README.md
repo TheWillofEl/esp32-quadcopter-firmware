@@ -12,7 +12,9 @@ flight results) lands once more phases are complete.
 
 - **MCU:** ESP32-S3-WROOM-1-N8 (8MB flash, no PSRAM)
 - **IMU:** MPU-6050 (6-axis accel + gyro) over I2C
-- **Motors:** 4x low-side N-channel MOSFET drivers, PWM from the MCU
+- **Motors:** 4x small brushed coreless DC motors, each driven by a
+  single low-side N-channel MOSFET (direct PWM duty cycle, no ESC/
+  commutation protocol — confirmed against the schematic and with Ahmed)
 - **Battery:** 1S Li-ion/LiPo, ~1000mAh, charged via MCP73871 with power-path
 - **USB:** CP2102N USB-UART bridge with auto-reset circuit (no manual
   button presses needed to flash)
@@ -41,12 +43,15 @@ firmware/
     battery.h                      - battery ADC with oversampling + calibration
     complementary_filter.h         - roll/pitch estimate from accel + gyro
     telemetry.h                    - Wi-Fi access point + UDP telemetry broadcast
+    motors.h                       - PWM motor control, arming, failsafe, battery cutoff
+    serial_console.h               - USB-serial bench-test command interface (Phase 3-5 stand-in)
 tools/
   ground_station.py                - live plotter for roll/pitch/battery telemetry
   requirements.txt                 - Python deps for tools/ scripts
 docs/
   PINMAP.md                        - full pin map, verified against the Altium schematic
   TOOLCHAIN.md                     - exact toolchain versions for reproducible builds
+  MOTOR_BENCH_TEST.md              - required procedure before ever spinning a motor
 ```
 
 ## Telemetry / ground station
@@ -73,7 +78,7 @@ kept deliberately.
 | 0 | Pin map verified against schematic | Done |
 | 1 | Toolchain + LED/UART bring-up sketch | Code written, **not yet flash-tested** (no USB access at time of writing) |
 | 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Code written and compiles clean, **not yet flash-tested** |
-| 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Not started |
+| 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
 | 4 | PID control loop, motor mixing | Not started |
 | 5 | Control link (UDP) | Not started |
 | 6 | Full README, license, polish | Not started |
@@ -85,7 +90,19 @@ rules followed throughout development:
 - Props off for all bench work.
 - Board clamped down during any motor test.
 - Arming sequence + comms failsafe implemented **before** motors ever spin
-  with props attached.
+  with props attached — see `firmware/drone_firmware/motors.h`:
+  - Motors force to zero duty at boot, before anything else runs.
+  - `setThrottle()` does nothing unless `arm()` was called explicitly.
+  - A comms failsafe disarms automatically if no command arrives within
+    500ms (currently exercised over USB serial — see
+    `serial_console.h` — since the real Wi-Fi control link is Phase 5).
+  - A battery-voltage cutoff disarms unconditionally below 3.3V (1S
+    Li-ion safe minimum), independent of anything the control loop does.
+  - Throttle is hard-clamped to 35% max while still in development
+    (`Motors::MAX_THROTTLE_DURING_DEVELOPMENT`), regardless of what's
+    commanded.
+- Motor bench-test procedure (props off, board clamped, one motor at a
+  time): [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md)
 
 ## Credits
 

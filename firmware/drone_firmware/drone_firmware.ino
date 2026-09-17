@@ -1,26 +1,36 @@
 // Main flight firmware.
 //
-// Phase 2 (current): sensors + telemetry only. No motor code runs yet —
-// see README.md "Progress" table and docs/PINMAP.md for what's verified.
-// Reads the MPU-6050, estimates roll/pitch with a complementary filter,
-// reads the battery voltage, and streams both over the drone's own Wi-Fi
-// access point via UDP for a ground-station script to plot live.
+// Phase 2: sensors + telemetry. Reads the MPU-6050, estimates roll/pitch
+// with a complementary filter, reads battery voltage, streams both over
+// the drone's own Wi-Fi access point via UDP.
 //
-// Phase 3+ (motors, control loop, failsafes) is NOT in this file yet —
-// deliberately, per the project's phase order: sensors and telemetry are
-// proven working before any motor code exists, since a motor bug is a
-// spinning-propeller safety issue and a sensor bug is not.
+// Phase 3 (current): motor PWM + safety, bench-testable over USB serial
+// (see serial_console.h) since the real Wi-Fi control link doesn't exist
+// yet (that's Phase 5). Every loop iteration checks the comms failsafe
+// and the battery cutoff, both of which force an immediate disarm — the
+// arming sequence and both safety checks exist BEFORE any throttle
+// command can ever reach a motor.
+//
+// PROPS OFF. BOARD CLAMPED DOWN. Every time, no exceptions, per the
+// project's safety rules (README.md / HANDOFF docs).
+//
+// Phase 4+ (PID control loop, motor mixing, real flight) is NOT in this
+// file yet.
 
 #include "../common/pins.h"
 #include "mpu6050.h"
 #include "battery.h"
 #include "complementary_filter.h"
 #include "telemetry.h"
+#include "motors.h"
+#include "serial_console.h"
 
 MPU6050 imu;
 BatteryMonitor battery;
 ComplementaryFilter filter;
 Telemetry telemetry;
+Motors motors;
+SerialConsole console;
 
 uint32_t last_update_micros = 0;
 
@@ -46,7 +56,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("=== drone-firmware: Phase 2 (sensors + telemetry) ===");
+  Serial.println("=== drone-firmware: Phase 3 (sensors + telemetry + motor PWM/safety) ===");
 
   if (!imu.begin()) {
     // WHO_AM_I mismatch means either a wiring fault or the chip isn't
@@ -71,6 +81,11 @@ void setup() {
 
   telemetry.begin();
 
+  // Motors: begin() forces all four to zero duty immediately — motors
+  // must never spin at boot, per the project's safety rules.
+  motors.begin();
+  console.begin();
+
   last_update_micros = micros();
   hz_window_start_millis = millis();
 
@@ -87,6 +102,30 @@ void loop() {
                    imu.accel_x_g, imu.accel_y_g, imu.accel_z_g, dt);
   }
 
+  // Bench-test command input (Phase 3 stand-in for the Phase 5 Wi-Fi
+  // control link).
+  console.poll(motors, battery, filter);
+
+  // Safety checks run every loop iteration, unconditionally — not on
+  // the telemetry cadence — so a dead comms link or a dying battery is
+  // caught as fast as the loop runs, not up to 50ms late.
+  //
+  // KNOWN COST, NOT YET MEASURED ON HARDWARE: readBatteryVolts() does 64
+  // oversampled analogRead() calls every single loop iteration now. If
+  // "status" or the printed loop_hz shows this is slowing the loop down
+  // more than expected once flashed, the fix is to move this behind its
+  // own short interval (e.g. every 10-20ms is still far faster than a
+  // battery can actually drop dangerously) rather than every iteration
+  // — don't lower OVERSAMPLE_COUNT in battery.h to compensate, since
+  // that's what's actually taming the noisy 100k/100k divider.
+  float battery_volts = battery.readBatteryVolts();
+  if (motors.checkFailsafe()) {
+    Serial.println("FAILSAFE: no command received in time. Motors disarmed.");
+  }
+  if (motors.checkBatteryCutoff(battery_volts)) {
+    Serial.println("BATTERY CUTOFF: voltage below safe minimum. Motors disarmed.");
+  }
+
   loop_count++;
   uint32_t now_millis = millis();
   if (now_millis - hz_window_start_millis >= 1000) {
@@ -97,7 +136,6 @@ void loop() {
 
   if (now_millis - last_telemetry_millis >= TELEMETRY_INTERVAL_MILLIS) {
     last_telemetry_millis = now_millis;
-    float battery_volts = battery.readBatteryVolts();
     telemetry.send(filter.roll_deg, filter.pitch_deg, battery_volts,
                     measured_loop_hz);
   }
