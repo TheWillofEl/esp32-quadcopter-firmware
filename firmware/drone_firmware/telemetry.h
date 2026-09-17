@@ -61,6 +61,26 @@ class Telemetry {
     udp_.endPacket();
   }
 
+  // Phase 5: control_link.h reads pilot command packets off this same
+  // socket/port rather than opening a second one — one UDP endpoint
+  // handles both directions, same as how a single TCP connection can be
+  // read and written. drone_firmware.ino calls this once per loop,
+  // before Telemetry::send(), so a just-arrived command packet is
+  // consumed by ControlLink and never seen by
+  // Telemetry::checkForGroundStation() as a "hello."
+  WiFiUDP &udp() { return udp_; }
+
+  // Phase 5: called from drone_firmware.ino right after a ControlLink
+  // packet arrives, so telemetry replies go straight to the pilot's
+  // address from the very first real command packet — no separate
+  // "hello" packet required once an app is actually sending commands
+  // (checkForGroundStation()'s hello-based discovery still exists for
+  // tools/ground_station.py, which only listens and never commands).
+  void setGroundStation(IPAddress ip) {
+    ground_station_ip_ = ip;
+    has_ground_station_ = true;
+  }
+
  private:
   WiFiUDP udp_;
   IPAddress ground_station_ip_;
@@ -68,13 +88,16 @@ class Telemetry {
 
   // If the ground station has sent us anything (even a single byte to
   // say hello), remember its address so replies go directly to it
-  // instead of a broadcast every packet.
+  // instead of a broadcast every packet. Phase 5: this only sees
+  // "hello"-style packets that ControlLink::poll() didn't already
+  // consume (ControlLink runs first each loop) — a real control packet
+  // still teaches Telemetry the ground station's address on its first
+  // arrival, since ControlLink itself doesn't touch ground_station_ip_.
   void checkForGroundStation() {
     int packet_size = udp_.parsePacket();
     if (packet_size > 0) {
       ground_station_ip_ = udp_.remoteIP();
       has_ground_station_ = true;
-      // Drain the packet; we don't need its contents yet (Phase 5 will).
       uint8_t discard[32];
       udp_.read(discard, sizeof(discard));
     }

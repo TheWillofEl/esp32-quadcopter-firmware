@@ -47,15 +47,18 @@ firmware/
     pid.h                          - generic PID controller, used for both angle and rate loops
     mixer.h                        - X-quad motor mixing (throttle + roll/pitch/yaw -> 4 motor values)
     flight_controller.h            - cascaded angle->rate self-level loop, wires PID + mixer + motors
-    serial_console.h               - USB-serial bench-test command interface (Phase 3-5 stand-in)
+    control_link.h                 - Wi-Fi UDP command receiver (arm/throttle/roll/pitch setpoint)
+    serial_console.h               - USB-serial bench-test command interface (always available)
 tools/
   ground_station.py                - live plotter for roll/pitch/battery telemetry
+  pilot_control.py                 - keyboard-driven control-link sender for bench testing
   requirements.txt                 - Python deps for tools/ scripts
 docs/
   PINMAP.md                        - full pin map, verified against the Altium schematic
   TOOLCHAIN.md                     - exact toolchain versions for reproducible builds
   MOTOR_BENCH_TEST.md              - required procedure before ever spinning a motor
   SELF_LEVEL_BENCH_TEST.md         - required procedure before trusting the self-level loop
+  CONTROL_LINK_BENCH_TEST.md       - required procedure before flying the Wi-Fi control link
 ```
 
 ## Telemetry / ground station
@@ -70,10 +73,16 @@ change these before flying anywhere with other people's drones nearby).
 3. `pip install -r tools/requirements.txt`
 4. `python tools/ground_station.py` — plots roll, pitch, and battery
    voltage live, ~20 times a second.
+5. `python tools/pilot_control.py` — bench-test keyboard control sender:
+   arm, adjust throttle, and nudge a roll/pitch setpoint over the same
+   UDP link (see `firmware/drone_firmware/control_link.h`). Required
+   procedure before ever running this with props on:
+   [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md).
 
-This is Ahmed's own small UDP protocol (plain-text `key=value` pairs),
-not cflib/CRTP — see [Credits](#credits) for why that distinction is
-kept deliberately.
+Both directions (telemetry out, commands in) use one small from-scratch
+UDP protocol (plain-text `key=value` pairs) that Ahmed designed for this
+board — not cflib/CRTP — see [Credits](#credits) for why that distinction
+is kept deliberately.
 
 ## Progress
 
@@ -84,8 +93,8 @@ kept deliberately.
 | 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Code written and compiles clean, **not yet flash-tested** |
 | 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
 | 4 | Self-level control loop (cascaded angle->rate PID, X-quad motor mixing) | Code written and compiles clean, **not yet flash-tested** — gains are unverified starting points, not tuned; bench-test procedure: [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md) |
-| 5 | Control link (UDP) | Not started |
-| 6 | Full README, license, polish | Not started |
+| 5 | Wi-Fi control link (UDP arm/throttle/roll/pitch commands) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md) |
+| 6 | Full README, license, polish | In progress |
 
 ## Safety
 
@@ -98,8 +107,11 @@ rules followed throughout development:
   - Motors force to zero duty at boot, before anything else runs.
   - `setThrottle()` does nothing unless `arm()` was called explicitly.
   - A comms failsafe disarms automatically if no command arrives within
-    500ms (currently exercised over USB serial — see
-    `serial_console.h` — since the real Wi-Fi control link is Phase 5).
+    500ms, over either interface — USB serial (`serial_console.h`) or the
+    Wi-Fi control link (`control_link.h`). The serial console is kept
+    available even after the Wi-Fi link exists specifically as an
+    always-on emergency disarm path — see `drone_firmware.ino`'s header
+    comment.
   - A battery-voltage cutoff disarms unconditionally below 3.3V (1S
     Li-ion safe minimum), independent of anything the control loop does.
   - Throttle is hard-clamped to 35% max while still in development
@@ -114,6 +126,13 @@ rules followed throughout development:
   testing, never guessed into a "better-looking" number. Bench-test
   procedure (props off first, sign/magnitude checks by hand, only then
   props on and restrained): [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md)
+- Wi-Fi control link (`control_link.h`) is a plain-text UDP protocol
+  secured only by the AP's WPA2 password (see `telemetry.h`) — change the
+  default SSID/password before flying anywhere that matters. Every
+  command packet feeds the same 500ms comms failsafe as the serial
+  console; a pilot app that stops sending (crash, Wi-Fi drop, out of
+  range) auto-disarms within 500ms, same mechanism as the serial test.
+  Bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md)
 
 ## Credits
 

@@ -11,14 +11,28 @@
 // arming sequence and both safety checks exist BEFORE any throttle
 // command can ever reach a motor.
 //
-// Phase 4 (current): self-level control loop (flight_controller.h) —
-// cascaded angle->rate PID per roll/pitch axis, mixed to four motor
-// throttles (mixer.h) for this board's confirmed X-quad layout. Bench
-// test via the serial console's 'level <0-100>' command; see
-// flight_controller.h's TODO for the exact hardware test sequence. Not
-// flown — gains are conservative starting points, unverified on real
-// hardware, and yaw/altitude/position are explicitly out of scope (see
+// Phase 4: self-level control loop (flight_controller.h) — cascaded
+// angle->rate PID per roll/pitch axis, mixed to four motor throttles
+// (mixer.h) for this board's confirmed X-quad layout. Bench test via the
+// serial console's 'level <0-100>' command; see flight_controller.h's
+// TODO for the exact hardware test sequence. Not flown — gains are
+// conservative starting points, unverified on real hardware, and
+// yaw/altitude/position are explicitly out of scope (see
 // flight_controller.h header comment for why).
+//
+// Phase 5 (current): Wi-Fi control link (control_link.h). Reads pilot
+// command packets (arm/throttle/roll/pitch setpoint) over the same UDP
+// socket telemetry.h already uses, so a ground-station app can fly the
+// self-level loop instead of driving it from the serial console. The
+// serial console STAYS — it's still the recommended way to do the
+// props-off bench tests from docs/MOTOR_BENCH_TEST.md and
+// docs/SELF_LEVEL_BENCH_TEST.md, since typing into a terminal is a more
+// deliberate, harder-to-fat-finger action than a UDP packet. Whichever
+// interface last sent a command wins (both ultimately just call the same
+// Motors/FlightController methods) — this is intentional: it means the
+// serial console can always be used as an emergency disarm path even
+// while flying under Wi-Fi control, since typing 'disarm' at the USB
+// port is not something a wireless failure can block.
 //
 // PROPS OFF. BOARD CLAMPED DOWN. Every time, no exceptions, per the
 // project's safety rules (README.md / HANDOFF docs).
@@ -30,6 +44,7 @@
 #include "telemetry.h"
 #include "motors.h"
 #include "flight_controller.h"
+#include "control_link.h"
 #include "serial_console.h"
 
 MPU6050 imu;
@@ -38,6 +53,7 @@ ComplementaryFilter filter;
 Telemetry telemetry;
 Motors motors;
 FlightController flight;
+ControlLink control_link;
 SerialConsole console;
 
 uint32_t last_update_micros = 0;
@@ -65,7 +81,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("=== drone-firmware: Phase 4 (self-level control loop) ===");
+  Serial.println("=== drone-firmware: Phase 5 (Wi-Fi control link) ===");
 
   if (!imu.begin()) {
     // WHO_AM_I mismatch means either a wiring fault or the chip isn't
@@ -113,19 +129,38 @@ void loop() {
                    imu.accel_x_g, imu.accel_y_g, imu.accel_z_g, dt);
   }
 
-  // Bench-test command input (Phase 3/4 stand-in for the Phase 5 Wi-Fi
-  // control link).
+  // Bench-test command input over USB (Phase 3/4 interface, still the
+  // recommended way to run the props-off procedures in docs/).
   console.poll(motors, battery, filter, flight);
 
-  // Self-level control loop: only actually drives motors when the serial
-  // console's 'level' command turned it on (see flight_controller.h), AND
-  // only when there's a fresh IMU reading this iteration — running the
-  // PID/mixer math again on a stale gyro reading (same value as last
-  // loop) would compute a zero rate-of-change on the derivative term for
-  // no real reason and waste cycles; skipping is free since motors were
-  // already set to their last valid throttle by the previous call.
+  // Wi-Fi control link (Phase 5): reads at most one pilot command packet
+  // per loop off the same UDP socket telemetry uses. Runs after the
+  // serial console so either interface can issue a command this same
+  // loop iteration — both ultimately just call Motors/FlightController
+  // methods, so there's no real conflict, only ordinary last-write-wins,
+  // which is fine since a human only ever drives one interface at a time
+  // in practice.
+  if (control_link.poll(telemetry.udp(), motors, flight)) {
+    if (control_link.haveSenderIP()) {
+      telemetry.setGroundStation(control_link.senderIP());
+    }
+  }
+
+  // Self-level control loop: only actually drives motors when self-level
+  // mode is on — turned on by either the serial console's 'level'
+  // command or a control-link arm=1 packet (see flight_controller.h). No
+  // effect on motors while in manual/idle mode. Runs every loop with a
+  // fresh IMU reading, using the same measured dt as the complementary
+  // filter update above, raw gyro rates straight from the IMU driver for
+  // the inner rate loop (see flight_controller.h's comment on why the
+  // rate loop uses raw gyro rather than the filtered angle), and the
+  // latest roll/pitch setpoint from the control link — (0,0) / "hold
+  // level" until a pilot app sends otherwise, which is also the only
+  // case the serial console's bench test can exercise, since it has no
+  // way to send a tilted setpoint.
   if (imu_updated) {
-    flight.update(filter, imu.gyro_x_dps, imu.gyro_y_dps, last_dt_, motors);
+    flight.update(filter, imu.gyro_x_dps, imu.gyro_y_dps, last_dt_, motors,
+                   control_link.targetRollDeg(), control_link.targetPitchDeg());
   }
 
   // Safety checks run every loop iteration, unconditionally — not on
