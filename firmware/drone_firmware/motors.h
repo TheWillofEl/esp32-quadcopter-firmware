@@ -117,8 +117,16 @@ class Motors {
   // cannot out-stubborn a dying battery — the cutoff is unconditional
   // and does not go through setThrottle() at all, it calls stopAll()
   // directly.
+  //
+  // Deliberately no "battery_volts > 0" guard here: BatteryMonitor::
+  // readBatteryVolts() is always a live, synchronous ADC read (see
+  // battery.h) — there's no separate "not ready yet" state a caller could
+  // pass, so a genuine 0.0V reading only ever means a real fault (e.g. a
+  // disconnected/floating sense line) and MUST cut power, not be treated
+  // as "no reading, skip the check." A skip-on-zero guard would be a
+  // fail-OPEN bug on exactly the wiring fault this check exists to catch.
   bool checkBatteryCutoff(float battery_volts) {
-    if (battery_volts > 0.0f && battery_volts < MIN_SAFE_BATTERY_VOLTS) {
+    if (battery_volts < MIN_SAFE_BATTERY_VOLTS) {
       disarm();
       return true;
     }

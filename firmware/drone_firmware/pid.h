@@ -23,6 +23,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <math.h>
 
 class PID {
  public:
@@ -69,7 +70,12 @@ class PID {
     // is the second line of defense for the still-armed case (e.g.
     // sitting against a hard mechanical limit).
     if (ki_ != 0.0f) {
-      float integral_limit = output_limit_ / ki_;
+      // fabsf(): a negative ki_ would otherwise make integral_limit
+      // negative, and constrain(x, -negative, negative) passes a min
+      // greater than max — undefined/wrong. No gain in this codebase is
+      // currently negative (see flight_controller.h), but this class is
+      // generic and shouldn't silently misbehave if one ever is.
+      float integral_limit = fabsf(output_limit_ / ki_);
       integral_ = constrain(integral_, -integral_limit, integral_limit);
     }
 

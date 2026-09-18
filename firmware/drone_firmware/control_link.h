@@ -105,6 +105,18 @@ class ControlLink {
       } else {
         motors.disarm();
         flight.setSelfLevel(false);
+        // Reset the remembered throttle/setpoint to zero on every disarm,
+        // not just the motors. Without this, a later bare 'arm=1' packet
+        // (no thr= field — the protocol allows omitting it, even though
+        // tools/pilot_control.py always sends one) would resume self-level
+        // at whatever throttle was last commanded before this disarm,
+        // via the throttle_pct = last_throttle_pct_ seed above. That
+        // defeats the entire point of requiring an explicit arm: a
+        // fresh arm must never be able to start at a nonzero, stale
+        // throttle just because the arming packet itself omitted thr=.
+        throttle_pct = 0.0f;
+        last_target_roll_ = 0.0f;
+        last_target_pitch_ = 0.0f;
       }
     } else if (motors.isArmed()) {
       // Already armed and this packet updated throttle/setpoint without
