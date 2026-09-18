@@ -13,6 +13,23 @@
 #include <Wire.h>
 #include "../common/pins.h"
 
+// Axis sign configuration — UNVERIFIED ON HARDWARE, see the comment block
+// on MPU6050::readIfReady() below before touching these.
+//
+// Default is +1 (no flip) for every axis: a guess, not a measurement.
+// Change a single constant to -1 here once docs/SELF_LEVEL_BENCH_TEST.md
+// Step 1 (tilt the board by hand, props off, watch which way the
+// self-level correction goes) reveals an axis is backwards — that's the
+// ONLY valid way to determine these values for this specific board.
+// Never guess a new value "because it looks more plausible"; only a
+// measured, observed direction mismatch justifies changing one of these.
+#define GYRO_X_SIGN 1
+#define GYRO_Y_SIGN 1
+#define GYRO_Z_SIGN 1
+#define ACCEL_X_SIGN 1
+#define ACCEL_Y_SIGN 1
+#define ACCEL_Z_SIGN 1
+
 class MPU6050 {
  public:
   // Raw values converted to physical units.
@@ -60,6 +77,31 @@ class MPU6050 {
 
   // Call this once per loop iteration; it only does I2C work when the
   // interrupt has actually fired, so it's cheap to call unconditionally.
+  //
+  // IMU AXIS SIGN CONVENTION — genuinely unverified on real hardware.
+  // A raw gyro/accel reading's sign depends on the exact rotational
+  // orientation of the MPU-6050 die inside its package as soldered onto
+  // this board, relative to which direction this board calls "roll
+  // right" / "pitch forward" — that's a physical fact about this specific
+  // PCB, not something derivable from the datasheet or from another
+  // project's code. Cross-referencing LiteWing's own MPU-6050 driver
+  // (Circuit-Digest/LiteWing, hal/src/sensors_mpu6050_hm5883L_ms5611.c)
+  // confirms this is a REAL, common failure mode on hardware very close
+  // to this one: their driver conditionally negates gyro X depending on
+  // which board revision it's compiled for —
+  //   #ifdef CONFIG_TARGET_ESPLANE_V1
+  //     sensorData.gyro.x = (gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
+  //   #else
+  //     sensorData.gyro.x = -(gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
+  //   #endif
+  // — a shipped, hardware-proven product needed a per-board sign flip.
+  // Their actual sign value doesn't transfer to this board (different
+  // hardware, different mounting), so it isn't reflected below — but the
+  // fact that it was necessary at all is the reason GYRO_X_SIGN etc.
+  // exist as named, single-point-of-change constants above instead of
+  // being buried as implicit +1 multiplications, or omitted entirely.
+  // See docs/SELF_LEVEL_BENCH_TEST.md Step 1 for the bench procedure that
+  // determines the correct values for this board.
   bool readIfReady() {
     if (!data_ready) {
       return false;
@@ -80,12 +122,12 @@ class MPU6050 {
     // Sensitivity scale factors for the ranges configured in begin():
     // AFS_SEL=1 (+-4g)    -> 8192 LSB/g
     // FS_SEL=1  (+-500dps) -> 65.5 LSB/(deg/s)
-    accel_x_g = raw_accel_x / 8192.0f;
-    accel_y_g = raw_accel_y / 8192.0f;
-    accel_z_g = raw_accel_z / 8192.0f;
-    gyro_x_dps = raw_gyro_x / 65.5f;
-    gyro_y_dps = raw_gyro_y / 65.5f;
-    gyro_z_dps = raw_gyro_z / 65.5f;
+    accel_x_g = ACCEL_X_SIGN * raw_accel_x / 8192.0f;
+    accel_y_g = ACCEL_Y_SIGN * raw_accel_y / 8192.0f;
+    accel_z_g = ACCEL_Z_SIGN * raw_accel_z / 8192.0f;
+    gyro_x_dps = GYRO_X_SIGN * raw_gyro_x / 65.5f;
+    gyro_y_dps = GYRO_Y_SIGN * raw_gyro_y / 65.5f;
+    gyro_z_dps = GYRO_Z_SIGN * raw_gyro_z / 65.5f;
 
     return true;
   }

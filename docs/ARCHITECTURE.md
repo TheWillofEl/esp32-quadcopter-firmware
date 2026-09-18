@@ -90,6 +90,49 @@ loop, which is why loop rate (see `measured_loop_hz`) matters: it's the
 rate at which safety checks and command polling happen, not just the
 sensor rate.
 
+## IMU axis signs are a named, isolated assumption — not derived from LiteWing
+
+`mpu6050.h` defines six sign constants (`GYRO_X_SIGN`, `GYRO_Y_SIGN`,
+`GYRO_Z_SIGN`, `ACCEL_X_SIGN`, `ACCEL_Y_SIGN`, `ACCEL_Z_SIGN`, all
+default `+1`) at the single point where raw IMU register values become
+physical units, specifically so a sign correction is ever only a one-line
+change instead of hunting through the filter or mixer math.
+
+This exists because of a direct comparison against LiteWing's own source
+(Circuit-Digest/LiteWing, an ESP-IDF/Crazyflie-based firmware for a
+similar ESP32-S3 board — read for architectural comparison only, nothing
+copied or ported, per this project's licensing rules — see
+[README Credits](../README.md#credits)). Their MPU-6050 driver
+(`hal/src/sensors_mpu6050_hm5883L_ms5611.c`) conditionally negates gyro X
+depending on which hardware target it's compiled for:
+
+```c
+#ifdef CONFIG_TARGET_ESPLANE_V1
+    sensorData.gyro.x = (gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
+#else
+    sensorData.gyro.x = -(gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
+#endif
+```
+
+That's evidence from a hardware-proven, shipped product that an IMU axis
+sign mismatch is a real, common failure mode — not a hypothetical one —
+and that it varies even across board revisions of the *same* product
+line. It is NOT evidence of what this board's correct sign values are;
+those depend on this board's specific MPU-6050 mounting orientation and
+can only be determined by the hardware bench test in
+`docs/SELF_LEVEL_BENCH_TEST.md` Step 1 (tilt the board by hand, props
+off, watch which way the self-level correction goes). The six constants
+all default to `+1` — an explicit guess, not a measurement — until that
+test says otherwise.
+
+The same reasoning was considered for `mixer.h`'s motor-mixing signs, and
+deliberately NOT applied: LiteWing's power-distribution code uses a
+different motor-numbering/frame convention than this board's confirmed
+arm layout, so there was no way to map their formula onto this one
+without over-interpreting an unclear correspondence. Guessing a change
+there would have been worse than leaving the existing, layout-derived
+mixing table alone.
+
 ## Why cascaded control instead of one PID per axis
 
 See `pid.h`'s header comment for the detailed reasoning. Short version:

@@ -33,14 +33,26 @@ prove it produces a *reasonable magnitude* of correction, in that order.
      (Rear-Right) should read HIGHER than MOT_2/MOT_3.
    - Release (board level) → all four should settle back toward roughly
      equal (near 0%, since base throttle is 0 here).
-5. If any direction is backwards, **do not touch the mixing signs to
-   "make the demo look right."** Work backward instead: confirm the
-   physical tilt direction and the confirmed arm layout in
-   `docs/PINMAP.md` are exactly what you think they are, then check
-   `complementary_filter.h`'s roll/pitch sign convention against the
-   IMU's actual mounting orientation on this board (not yet independently
-   verified on hardware — this is exactly the kind of thing this test is
-   for). A sign flip here is a real bug to find, not a magnitude to tune.
+5. If any direction is backwards, **do not touch `mixer.h`'s signs to
+   "make the demo look right."** The mixing table is a fixed, derived-
+   from-the-confirmed-arm-layout fact — it should not need to change.
+   Work backward instead, in this order:
+   1. Confirm the physical tilt direction and the confirmed arm layout in
+      `docs/PINMAP.md` are exactly what you think they are (easy to
+      mix up "board's left" vs. "your left" if it's not oriented the way
+      you're facing).
+   2. If the layout checks out, the fix is almost certainly one of the
+      six axis-sign constants in `mpu6050.h`
+      (`GYRO_X_SIGN`/`GYRO_Y_SIGN`/`GYRO_Z_SIGN`/`ACCEL_X_SIGN`/
+      `ACCEL_Y_SIGN`/`ACCEL_Z_SIGN`, all default `+1`) — flip the one
+      constant that corresponds to the backwards axis to `-1` and repeat
+      this step. See that file's comment block on `readIfReady()` for why
+      these exist and why a real, shipped board (LiteWing) needed the
+      same kind of fix. This is a one-line change specifically so this
+      step doesn't turn into editing filter/mixer math by hand.
+   3. A sign flip found this way is a real, expected bug to fix — not a
+      magnitude to tune, and not evidence anything else in the pipeline
+      is wrong.
 
 ## Step 2 — magnitude sanity check (props off)
 
