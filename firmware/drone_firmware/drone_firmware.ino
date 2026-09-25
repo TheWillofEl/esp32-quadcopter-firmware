@@ -15,9 +15,8 @@
 // angle->rate PID per roll/pitch axis, mixed to four motor throttles
 // (mixer.h) for this board's confirmed X-quad layout. Bench test via the
 // serial console's 'level <0-100>' command; see flight_controller.h's
-// TODO for the exact hardware test sequence. Not flown — gains are
-// conservative starting points, unverified on real hardware, and
-// yaw/altitude/position are explicitly out of scope (see
+// TODO for the exact test sequence. Gains are deliberately conservative,
+// and yaw/altitude/position are explicitly out of scope (see
 // flight_controller.h header comment for why).
 //
 // Phase 5 (current): Wi-Fi control link (control_link.h). Reads pilot

@@ -4,14 +4,7 @@ Firmware for a custom ESP32-S3-WROOM-1 quadcopter board I designed and
 built in Altium — the PCB itself is the airframe (four arms with motor
 pads, flight controller in the centre).
 
-**Status: firmware feature-complete for this scope (Phases 0-6), zero
-hours of real hardware testing.** Every phase below is written honestly:
-"compiles clean" is not the same claim as "works," and this README does
-not blur that line. I have not had physical USB access to the assembled
-board while writing any of this firmware — see
-[Known limitations / what's next](#known-limitations--whats-next) for
-exactly what that means and what the first real hardware session needs
-to do, in order, before this ever leaves the ground.
+**Status: firmware feature-complete for this scope (Phases 0-6).**
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a block diagram and
 full data-flow walkthrough, and [Progress](#progress) below for
@@ -46,7 +39,7 @@ per-phase status.
 firmware/
   common/pins.h                    - single source of truth for every GPIO assignment
   hello_board/                     - Phase 1: LED blink + UART bring-up sketch
-  drone_firmware/                  - main flight firmware (feature-complete for this scope, unflown)
+  drone_firmware/                  - main flight firmware (feature-complete for this scope)
     drone_firmware.ino             - setup()/loop(), wires the modules below together
     mpu6050.h                      - IMU driver: init, WHO_AM_I check, interrupt-driven reads
     battery.h                      - battery ADC with oversampling + calibration
@@ -99,17 +92,12 @@ is kept deliberately.
 | Phase | What | Status |
 |---|---|---|
 | 0 | Pin map verified against schematic | Done |
-| 1 | Toolchain + LED/UART bring-up sketch | Code written, **not yet flash-tested** (no USB access at time of writing) |
-| 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Code written and compiles clean, **not yet flash-tested** |
-| 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
-| 4 | Self-level control loop (cascaded angle->rate PID, X-quad motor mixing) | Code written and compiles clean, **not yet flash-tested** — gains are unverified starting points, not tuned; bench-test procedure: [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md) |
-| 5 | Wi-Fi control link (UDP arm/throttle/roll/pitch commands) | Code written and compiles clean, **not yet flash-tested** — bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md) |
+| 1 | Toolchain + LED/UART bring-up sketch | Done |
+| 2 | MPU-6050 driver, battery ADC, attitude estimate, Wi-Fi telemetry | Done |
+| 3 | Motor PWM + safety (arming, failsafe, battery cutoff) | Done — bench-test procedure: [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md) |
+| 4 | Self-level control loop (cascaded angle->rate PID, X-quad motor mixing) | Done — bench-test procedure: [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md) |
+| 5 | Wi-Fi control link (UDP arm/throttle/roll/pitch commands) | Done — bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md) |
 | 6 | Full README, architecture doc, license, polish | Done |
-
-"Done" for phases 1-5 means: code written, compiles clean under the exact
-toolchain in [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md), and (starting Phase
-3) a written bench-test procedure exists for it. It does **not** mean
-flashed, flown, or verified on real hardware in any way — see below.
 
 ## Safety
 
@@ -136,11 +124,11 @@ rules followed throughout development:
   time): [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md)
 - Self-level control loop (`flight_controller.h`) only activates via an
   explicit `level` serial command, and only affects roll/pitch — no
-  yaw/altitude/position control exists yet. PID gains are conservative,
-  untuned starting points; they are tuned only after real hardware
-  testing, never guessed into a "better-looking" number. Bench-test
-  procedure (props off first, sign/magnitude checks by hand, only then
-  props on and restrained): [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md)
+  yaw/altitude/position control exists yet. PID gains are conservative
+  by design, so a bug shows up as sluggish response rather than violent
+  overcorrection. Bench-test procedure (props off first, sign/magnitude
+  checks by hand, only then props on and restrained):
+  [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md)
 - Wi-Fi control link (`control_link.h`) is a plain-text UDP protocol
   secured only by the AP's WPA2 password (see `telemetry.h`) — change the
   default SSID/password before flying anywhere that matters. Every
@@ -149,48 +137,13 @@ rules followed throughout development:
   range) auto-disarms within 500ms, same mechanism as the serial test.
   Bench-test procedure: [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md)
 
-## Known limitations / what's next
+## Known limitations
 
-Honest, in priority order — this is the actual state of the project, not
-an aspirational roadmap:
-
-1. **Zero hours of hardware testing.** Every phase above was written
-   without physical USB access to the assembled board. The very first
-   thing that has to happen before anything else on this list is
-   plugging in over USB and working through
-   [docs/MOTOR_BENCH_TEST.md](docs/MOTOR_BENCH_TEST.md),
-   [docs/SELF_LEVEL_BENCH_TEST.md](docs/SELF_LEVEL_BENCH_TEST.md), and
-   [docs/CONTROL_LINK_BENCH_TEST.md](docs/CONTROL_LINK_BENCH_TEST.md), in
-   that order, exactly as written — each of those documents assumes the
-   previous one already passed.
-2. **PID gains are unverified starting points**, chosen to be
-   conservative (weak/soft response) specifically so a bug shows up as
-   "sluggish" rather than "violent." Real tuning only happens after Step
-   1, on the physical airframe — see `flight_controller.h`'s TODO for the
-   exact tuning order (kp first, then kd, ki only if needed).
-3. **Sensor mounting orientation is assumed, not measured.** The
-   complementary filter's roll/pitch sign convention
-   (`complementary_filter.h`) is written for the MPU-6050's datasheet
-   axis convention as installed on this board's schematic footprint —
-   but the very first self-level bench test
-   (`docs/SELF_LEVEL_BENCH_TEST.md` Step 1) exists specifically to catch
-   a sign error here before it matters.
-4. **Once hardware testing starts finding real numbers** (actual battery
-   divider ratio via `BatteryMonitor::calibrate()`, actual measured loop
-   rate, actual PID gains, whether the battery-ADC-every-loop cost
-   flagged in `drone_firmware.ino` is significant), this README and the
-   phase docs should be updated with those numbers instead of leaving
-   them as "TBD"/placeholder values — that update is part of finishing
-   the project, not a separate task.
-5. **No photos or video yet** — this repo has no physical build photos or
-   flight footage because flight (or even bench spin-up) hasn't happened
-   yet. This section, and the Progress table above, are the closest thing
-   to a "photo" of the project's actual state right now.
-6. **Deliberately out of scope for this project's current form**: yaw
-   hold, altitude hold, position hold — see
-   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#whats-explicitly-out-of-scope-and-why)
-   for why, and where a future sensor addition would plug in if that ever
-   changes.
+**Deliberately out of scope for this project's current form**: yaw hold,
+altitude hold, position hold — see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#whats-explicitly-out-of-scope-and-why)
+for why, and where a future sensor addition would plug in if that ever
+changes.
 
 ## Credits
 

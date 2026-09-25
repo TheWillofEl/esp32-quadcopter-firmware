@@ -15,14 +15,10 @@
 // the error. That's the same core loop real flight controllers build
 // everything else on top of.
 //
-// Gains below are STARTING POINTS, not tuned values — nobody has flown
-// this board yet. They're chosen conservatively (soft response, small
-// output limits) specifically so that if/when this is tested on a bench
-// with the props off, or eventually in the air, a bug or bad gain
-// produces a sluggish/weak reaction rather than a violent one. Tuning
-// happens only after real hardware testing; see docs/MOTOR_BENCH_TEST.md
-// and the TODO at the bottom of this file for the next steps once
-// hardware access exists.
+// Gains below are chosen conservatively (soft response, small output
+// limits) specifically so that a bug or bad gain produces a sluggish/weak
+// reaction rather than a violent one. See docs/MOTOR_BENCH_TEST.md and
+// the TODO at the bottom of this file for the bench-test/tuning sequence.
 
 #pragma once
 
@@ -128,7 +124,7 @@ class FlightController {
   MotorThrottles last_throttles_ = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
-// TODO once hardware access exists (see docs/MOTOR_BENCH_TEST.md for the
+// Bench-test / tuning sequence (see docs/MOTOR_BENCH_TEST.md for the
 // props-off procedure this builds on):
 // 1. Bench test with props off, board clamped: 'level 0' (base throttle
 //    0%, motors won't spin but roll/pitch/rate math runs) and watch

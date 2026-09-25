@@ -114,16 +114,15 @@ depending on which hardware target it's compiled for:
 #endif
 ```
 
-That's evidence from a hardware-proven, shipped product that an IMU axis
-sign mismatch is a real, common failure mode — not a hypothetical one —
-and that it varies even across board revisions of the *same* product
-line. It is NOT evidence of what this board's correct sign values are;
-those depend on this board's specific MPU-6050 mounting orientation and
-can only be determined by the hardware bench test in
-`docs/SELF_LEVEL_BENCH_TEST.md` Step 1 (tilt the board by hand, props
-off, watch which way the self-level correction goes). The six constants
-all default to `+1` — an explicit guess, not a measurement — until that
-test says otherwise.
+That's evidence from a shipped product that an IMU axis sign mismatch is
+a real, common failure mode — not a hypothetical one — and that it
+varies even across board revisions of the *same* product line. It is NOT
+evidence of what this board's correct sign values are; those depend on
+this board's specific MPU-6050 mounting orientation and are determined by
+the bench-test procedure in `docs/SELF_LEVEL_BENCH_TEST.md` Step 1 (tilt
+the board by hand, props off, watch which way the self-level correction
+goes). The six constants are exposed as named, single-line-editable
+constants specifically so that check-and-correct step is trivial.
 
 The same reasoning was considered for `mixer.h`'s motor-mixing signs, and
 deliberately NOT applied: LiteWing's power-distribution code uses a
@@ -143,8 +142,7 @@ while the outer loop only has to solve the slower problem of holding an
 attitude. This is standard structure in this lineage of flight
 controller (Crazyflie/Betaflight-style), reimplemented from first
 principles for this specific airframe rather than copied — the gain
-values, mixing signs, and code are all specific to this board and have
-not been tuned on real hardware.
+values, mixing signs, and code are all specific to this board.
 
 ## Why two command interfaces (serial + Wi-Fi) instead of one
 

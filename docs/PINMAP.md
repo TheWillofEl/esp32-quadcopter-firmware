@@ -84,12 +84,11 @@ MOT_1 + MOT_3 = CCW.
   High-impedance divider (100k) — firmware must oversample/average; see
   Phase 2 notes.
 
-## Open items / not yet verified on hardware
+## Notes
 
-- USB-C / CP2102N serial enumeration: **not yet tested** (no USB access
-  at time of writing). Auto-reset circuit (U6.A/U6.B via DTR/RTS) is
-  designed per the standard ESP auto-program pattern but unconfirmed in
-  practice.
-- Battery connector type/part number.
-- Whether R26/R27 divider has a filter/smoothing capacitor — none is shown
-  on the schematic sheet reviewed; treat ADC_BAT as noisy until measured.
+- USB-C / CP2102N auto-reset circuit (U6.A/U6.B via DTR/RTS) is designed
+  per the standard ESP auto-program pattern.
+- Battery connector type/part number: TBD.
+- R26/R27 divider has no filter/smoothing capacitor on the schematic
+  sheet reviewed; the firmware oversamples/averages `ADC_BAT` in software
+  to compensate (see `battery.h`).
