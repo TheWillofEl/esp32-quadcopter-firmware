@@ -22,11 +22,6 @@
 // enough that it should only ever be a slow correction, not the primary
 // signal.
 //
-// Yaw is NOT estimated here — a single IMU (no magnetometer) cannot
-// measure absolute heading; only gyro-integrated relative yaw is
-// possible, and that will drift with no way to correct it. This board
-// has no magnetometer, so yaw-hold is out of scope until/unless one is
-// added on the J6/second-I2C expansion headers.
 
 #pragma once
 
